@@ -47,7 +47,7 @@ class YesminVoiceService : Service() {
         if (intent?.action == ACTION_STOP) { stopAssistant(); return START_NOT_STICKY }
         if (Build.VERSION.SDK_INT >= 29) startForeground(NOTIFICATION_ID, notification(), android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
         else startForeground(NOTIFICATION_ID, notification())
-        if (!stopped) speak("আমি শুনছি। আমাকে বলো কী করতে হবে।")
+        
         return START_STICKY
     }
 
@@ -77,7 +77,7 @@ class YesminVoiceService : Service() {
                     @Deprecated("Deprecated in Java")
                     override fun onError(utteranceId: String?) { handler.post { if (!stopped) startListening() } }
                 })
-                startListening()
+                speak("আমি চালু হয়েছি। বলো, কী করতে হবে?")
             }
         }
     }
