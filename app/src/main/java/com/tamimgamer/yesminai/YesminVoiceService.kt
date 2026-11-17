@@ -121,27 +121,32 @@ class YesminVoiceService : Service() {
     private fun handleVoiceCommand(spoken: String) {
         val command = spoken.lowercase(Locale.ROOT).trim()
         if (listOf("yesmin stop", "stop yesmin", "থামো", "বন্ধ করো", "স্টপ", "বন্ধ হও").any { command.contains(it) }) { stopAssistant(); return }
-        val apps = listOf(
-            Triple(listOf("youtube", "ইউটিউব"), "com.google.android.youtube", "YouTube"),
-            Triple(listOf("chrome", "ক্রোম"), "com.android.chrome", "Chrome"),
-            Triple(listOf("roblox", "রোবলক্স"), "com.roblox.client", "Roblox"),
-            Triple(listOf("whatsapp", "হোয়াটসঅ্যাপ", "হোয়াটসঅ্যাপ"), "com.whatsapp", "WhatsApp"),
-            Triple(listOf("facebook", "ফেসবুক"), "com.facebook.katana", "Facebook"),
-            Triple(listOf("settings", "সেটিংস"), "com.android.settings", "Settings")
-        )
-        val match = apps.firstOrNull { item -> item.first.any { command.contains(it) } && listOf("খোলো", "ওপেন", "open", "চালু", "যাও").any(command::contains) }
-        if (match != null) {
-            val launchIntent = packageManager.getLaunchIntentForPackage(match.second)
-            if (launchIntent == null) { speak("${match.third} অ্যাপটি এই ফোনে নেই।"); return }
-            speak("ঠিক আছে। আগে বর্তমান অ্যাপ থেকে বের হচ্ছি, তারপর ${match.third} খুলছি।")
+        val openVerb = listOf("খোলো", "খুলে দাও", "ওপেন", "open", "launch", "চালু", "যাও", "khol").any(command::contains)
+        if (openVerb) {
+            val target = findInstalledApp(this, command)
+            if (target == null) {
+                speak("এই নামে কোনো ইনস্টল করা অ্যাপ খুঁজে পেলাম না। আবার অ্যাপের নাম বলো।")
+                return
+            }
+            val launchIntent = packageManager.getLaunchIntentForPackage(target.first)
+            if (launchIntent == null) {
+                speak("${target.second} অ্যাপটি সরাসরি খোলা যাচ্ছে না।")
+                return
+            }
+            speak("ঠিক আছে। ${target.second} খুলছি।")
             handler.postDelayed({
                 if (stopped) return@postDelayed
                 YesminAccessibilityService.performBackIfConnected()
                 handler.postDelayed({
                     if (stopped) return@postDelayed
                     launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    startActivity(launchIntent)
-                    speak("${match.third} খুলেছি।")
+                    try {
+                        startActivity(launchIntent)
+                    } catch (_: Exception) {
+                        speak("${target.second} খোলা যায়নি।")
+                        return@postDelayed
+                    }
+                    speak("${target.second} খুলেছি।")
                 }, 650)
             }, 850)
             return
