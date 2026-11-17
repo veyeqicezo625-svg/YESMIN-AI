@@ -240,7 +240,7 @@ private fun YesminApp(initialKey: String, initialModel: String, saveSettings: (S
                     }
                 }
             ) { Icon(Icons.Default.Mic, contentDescription = "Voice input", tint = if (listening) Blue else White) }
-            FilledIconButton(onClick = { sendMessage() }, enabled = input.isNotBlank() && !busy && apiKey.isNotBlank()) {
+            FilledIconButton(onClick = { sendMessage() }, enabled = input.isNotBlank() && !busy) {
                 Icon(Icons.Default.Send, contentDescription = "Send")
             }
         }
