@@ -60,8 +60,11 @@ class MainActivity : ComponentActivity() {
                 YesminApp(
                     initialKey = prefs.getString("freemodel_key", "") ?: "",
                     initialModel = prefs.getString("freemodel_model", "deepseek-v3.2") ?: "deepseek-v3.2",
-                    saveSettings = { key, model ->
-                        prefs.edit().putString("freemodel_key", key).putString("freemodel_model", model).apply()
+                    initialVoiceGender = prefs.getString("voice_gender", "male") ?: "male",
+                    initialVoiceStyle = prefs.getString("voice_style", "natural") ?: "natural",
+                    saveSettings = { key, model, gender, style ->
+                        prefs.edit().putString("freemodel_key", key).putString("freemodel_model", model)
+                            .putString("voice_gender", gender).putString("voice_style", style).apply()
                     }
                 )
             }
@@ -73,10 +76,14 @@ private data class ChatMessage(val text: String, val fromUser: Boolean)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun YesminApp(initialKey: String, initialModel: String, saveSettings: (String, String) -> Unit) {
+private fun YesminApp(initialKey: String, initialModel: String, initialVoiceGender: String, initialVoiceStyle: String, saveSettings: (String, String, String, String) -> Unit) {
     val context = LocalContext.current
     var apiKey by remember { mutableStateOf(initialKey) }
     var model by remember { mutableStateOf(initialModel) }
+    var voiceGender by remember { mutableStateOf(initialVoiceGender) }
+    var voiceStyle by remember { mutableStateOf(initialVoiceStyle) }
+    var draftVoiceGender by remember { mutableStateOf(initialVoiceGender) }
+    var draftVoiceStyle by remember { mutableStateOf(initialVoiceStyle) }
     var showSettings by remember { mutableStateOf(initialKey.isBlank()) }
     var draftKey by remember { mutableStateOf(initialKey) }
     var draftModel by remember { mutableStateOf(initialModel) }
@@ -153,6 +160,13 @@ private fun YesminApp(initialKey: String, initialModel: String, saveSettings: (S
     fun speak(text: String) {
         if (text.isNotBlank()) {
             tts.language = Locale("bn", "BD")
+            val marker = if (voiceGender == "male") listOf("male", "man", "masculine") else listOf("female", "woman", "feminine")
+            val selectedVoice = tts.voices?.firstOrNull { voice ->
+                voice.locale.language == "bn" && marker.any { voice.name.lowercase(Locale.ROOT).contains(it) }
+            }
+            if (selectedVoice != null) tts.voice = selectedVoice
+            tts.setPitch(if (selectedVoice != null) 1.0f else if (voiceGender == "male") 0.86f else 1.08f)
+            tts.setSpeechRate(if (voiceStyle == "natural") 1.0f else 1.08f)
             tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "yesmin_reply")
         }
     }
@@ -207,7 +221,11 @@ private fun YesminApp(initialKey: String, initialModel: String, saveSettings: (S
                 IconButton(onClick = { messages.lastOrNull { !it.fromUser }?.let { speak(it.text) } }) {
                     Icon(Icons.Default.VolumeUp, contentDescription = "Speak latest reply", tint = White)
                 }
-                IconButton(onClick = { draftKey = apiKey; draftModel = model; showSettings = true }) {
+                IconButton(onClick = {
+                    draftKey = apiKey; draftModel = model
+                    draftVoiceGender = voiceGender; draftVoiceStyle = voiceStyle
+                    showSettings = true
+                }) {
                     Icon(Icons.Default.Settings, contentDescription = "Settings", tint = White)
                 }
             }
@@ -272,9 +290,22 @@ private fun YesminApp(initialKey: String, initialModel: String, saveSettings: (S
     if (showSettings) {
         AlertDialog(
             onDismissRequest = { showSettings = false },
-            title = { Text("FreeModel API সেটআপ") },
+            title = { Text("YESMIN Settings") },
             text = {
                 Column {
+                    Text("Voice Settings", style = MaterialTheme.typography.titleMedium, color = Blue)
+                    Text("Voice Gender")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(selected = draftVoiceGender == "male", onClick = { draftVoiceGender = "male" }, label = { Text("Male") })
+                        FilterChip(selected = draftVoiceGender == "female", onClick = { draftVoiceGender = "female" }, label = { Text("Female") })
+                    }
+                    Text("Voice Style")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(selected = draftVoiceStyle == "natural", onClick = { draftVoiceStyle = "natural" }, label = { Text("Natural") })
+                        FilterChip(selected = draftVoiceStyle == "friendly", onClick = { draftVoiceStyle = "friendly" }, label = { Text("Friendly") })
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Text("FreeModel API Setup", style = MaterialTheme.typography.titleMedium, color = Blue)
                     Text("FreeModel Dashboard → API Keys থেকে fm_ দিয়ে শুরু হওয়া key তৈরি করো। Key কাউকে শেয়ার করবে না।")
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(value = draftKey, onValueChange = { draftKey = it }, label = { Text("FreeModel API key (fm_…)") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
@@ -304,7 +335,9 @@ private fun YesminApp(initialKey: String, initialModel: String, saveSettings: (S
                 TextButton(onClick = {
                     apiKey = draftKey.trim()
                     model = draftModel.trim().ifBlank { "deepseek-v3.2" }
-                    saveSettings(apiKey, model)
+                    voiceGender = draftVoiceGender
+                    voiceStyle = draftVoiceStyle
+                    saveSettings(apiKey, model, voiceGender, voiceStyle)
                     status = if (apiKey.isBlank()) "FreeModel API key সেট করো" else "FreeModel • $model"
                     showSettings = false
                 }) { Text("Save") }
