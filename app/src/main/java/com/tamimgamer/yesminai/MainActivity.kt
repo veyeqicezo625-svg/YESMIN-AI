@@ -171,6 +171,8 @@ private fun YesminApp(initialKey: String, initialModel: String, initialVoiceGend
             tts.language = Locale("bn", "BD")
             val marker = if (voiceGender == "male") listOf("male", "man", "masculine") else listOf("female", "woman", "feminine")
             val selectedVoice = tts.voices?.firstOrNull { voice ->
+                voice.name.lowercase(Locale.ROOT).contains("alex")
+            } ?: tts.voices?.firstOrNull { voice ->
                 voice.locale.language == "bn" && marker.any { voice.name.lowercase(Locale.ROOT).contains(it) }
             }
             if (selectedVoice != null) tts.voice = selectedVoice
