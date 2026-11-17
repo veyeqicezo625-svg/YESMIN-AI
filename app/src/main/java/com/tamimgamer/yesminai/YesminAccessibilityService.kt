@@ -73,5 +73,6 @@ class YesminAccessibilityService : AccessibilityService() {
             return enabled.split(':').any { it.equals(target, true) }
         }
         fun executeApproved(command: String): String = service?.runApproved(command) ?: "YESMIN Accessibility Service এখন সংযুক্ত নয়। Settings থেকে service চালু করে আবার চেষ্টা করো।"
+        fun performBackIfConnected(): Boolean = service?.performGlobalAction(GLOBAL_ACTION_BACK) ?: false
     }
 }
