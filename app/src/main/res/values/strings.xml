@@ -1,0 +1,4 @@
+<resources>
+<string name="app_name">YESMIN AI</string>
+<string name="yesmin_accessibility_description">YESMIN AI can read visible screen text and perform actions only after you approve each request.</string>
+</resources>
