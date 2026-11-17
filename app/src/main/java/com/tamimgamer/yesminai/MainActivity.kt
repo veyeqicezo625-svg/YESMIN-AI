@@ -29,11 +29,13 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 
+private const val FREEMODEL_BASE_URL = "https://freemodel.in/v1"
 private val Night = Color(0xFF090B14)
 private val Panel = Color(0xFF151A2B)
 private val Purple = Color(0xFF8B5CF6)
 private val Blue = Color(0xFF38BDF8)
 private val White = Color(0xFFF4F3FF)
+private val http = OkHttpClient()
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -42,8 +44,11 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(primary = Purple, secondary = Blue, background = Night, surface = Panel, onBackground = White, onSurface = White)) {
                 YesminApp(
-                    initialKey = prefs.getString("gemini_key", "") ?: "",
-                    saveKey = { prefs.edit().putString("gemini_key", it).apply() }
+                    initialKey = prefs.getString("freemodel_key", "") ?: "",
+                    initialModel = prefs.getString("freemodel_model", "deepseek-v3.2") ?: "deepseek-v3.2",
+                    saveSettings = { key, model ->
+                        prefs.edit().putString("freemodel_key", key).putString("freemodel_model", model).apply()
+                    }
                 )
             }
         }
@@ -54,15 +59,24 @@ private data class ChatMessage(val text: String, val fromUser: Boolean)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun YesminApp(initialKey: String, saveKey: (String) -> Unit) {
+private fun YesminApp(
+    initialKey: String,
+    initialModel: String,
+    saveSettings: (String, String) -> Unit
+) {
     var apiKey by remember { mutableStateOf(initialKey) }
+    var model by remember { mutableStateOf(initialModel) }
     var showSettings by remember { mutableStateOf(initialKey.isBlank()) }
     var draftKey by remember { mutableStateOf(initialKey) }
+    var draftModel by remember { mutableStateOf(initialModel) }
     var input by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
-    var status by remember { mutableStateOf(if (initialKey.isBlank()) "Gemini API key সেট করো" else "Ready") }
+    var loadingModels by remember { mutableStateOf(false) }
+    var modelMenu by remember { mutableStateOf(false) }
+    var availableModels by remember { mutableStateOf(listOf<String>()) }
+    var status by remember { mutableStateOf(if (initialKey.isBlank()) "FreeModel API key সেট করো" else "FreeModel • $initialModel") }
     val messages = remember {
-        mutableStateListOf(ChatMessage("হ্যালো! আমি Yesmin AI। 💜\nবাংলায় কথা বলতে এবং coding-এ সাহায্য করতে প্রস্তুত।", false))
+        mutableStateListOf(ChatMessage("হ্যালো! আমি Yesmin AI। 💜\nFreeModel API দিয়ে কথা বলতে প্রস্তুত। Settings থেকে নিজের fm_ API key বসাও।", false))
     }
     val scope = rememberCoroutineScope()
 
@@ -72,7 +86,7 @@ private fun YesminApp(initialKey: String, saveKey: (String) -> Unit) {
                 Text("YESMIN AI", style = MaterialTheme.typography.headlineSmall, color = White)
                 Text(status, style = MaterialTheme.typography.labelSmall, color = Blue)
             }
-            IconButton(onClick = { draftKey = apiKey; showSettings = true }) {
+            IconButton(onClick = { draftKey = apiKey; draftModel = model; showSettings = true }) {
                 Icon(Icons.Default.Settings, contentDescription = "Settings", tint = White)
             }
         }
@@ -98,37 +112,71 @@ private fun YesminApp(initialKey: String, saveKey: (String) -> Unit) {
                         messages.add(ChatMessage(prompt, true))
                         input = ""
                         busy = true
-                        status = "Thinking…"
+                        status = "Thinking • $model"
                         scope.launch {
-                            val answer = askGemini(apiKey, prompt)
+                            val answer = askFreeModel(apiKey, model, prompt)
                             messages.add(ChatMessage(answer, false))
                             busy = false
-                            status = if (answer.startsWith("সমস্যা:")) "Connection issue" else "Ready"
+                            status = if (answer.startsWith("সমস্যা:")) "Connection issue" else "FreeModel • $model"
                         }
                     }
                 },
                 enabled = input.isNotBlank() && !busy && apiKey.isNotBlank()
             ) { Icon(Icons.Default.Send, contentDescription = "Send") }
         }
-        if (apiKey.isBlank()) TextButton(onClick = { showSettings = true }) { Text("Gemini API key সেটিংস খুলুন") }
+        if (apiKey.isBlank()) TextButton(onClick = { showSettings = true }) { Text("FreeModel API key সেটিংস খুলুন") }
     }
 
     if (showSettings) {
         AlertDialog(
             onDismissRequest = { showSettings = false },
-            title = { Text("Gemini সেটআপ") },
+            title = { Text("FreeModel API সেটআপ") },
             text = {
                 Column {
-                    Text("Google AI Studio থেকে নিজের Gemini API key তৈরি করে এখানে বসাও। Key কাউকে শেয়ার করবে না।")
-                    Spacer(Modifier.height(10.dp))
-                    OutlinedTextField(value = draftKey, onValueChange = { draftKey = it }, label = { Text("Gemini API key") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
+                    Text("FreeModel Dashboard → API Keys থেকে fm_ দিয়ে শুরু হওয়া key তৈরি করো। Key কাউকে শেয়ার করবে না।")
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(value = draftKey, onValueChange = { draftKey = it }, label = { Text("FreeModel API key (fm_…)") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
+                    Spacer(Modifier.height(8.dp))
+                    Text("API Base URL: $FREEMODEL_BASE_URL", style = MaterialTheme.typography.bodySmall, color = Blue)
+                    Spacer(Modifier.height(8.dp))
+                    Box {
+                        OutlinedTextField(
+                            value = draftModel,
+                            onValueChange = { draftModel = it },
+                            label = { Text("Model ID") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            trailingIcon = { TextButton(onClick = { modelMenu = true }) { Text("List") } }
+                        )
+                        DropdownMenu(expanded = modelMenu, onDismissRequest = { modelMenu = false }) {
+                            availableModels.forEach { id ->
+                                DropdownMenuItem(text = { Text(id) }, onClick = { draftModel = id; modelMenu = false })
+                            }
+                            if (availableModels.isEmpty()) DropdownMenuItem(text = { Text("Load models first") }, onClick = { modelMenu = false })
+                        }
+                    }
+                    TextButton(
+                        enabled = draftKey.startsWith("fm_") && !loadingModels,
+                        onClick = {
+                            loadingModels = true
+                            scope.launch {
+                                val result = fetchFreeModelModels(draftKey.trim())
+                                availableModels = result.first
+                                status = result.second
+                                loadingModels = false
+                                if (availableModels.isNotEmpty() && draftModel !in availableModels) draftModel = availableModels.first()
+                                modelMenu = availableModels.isNotEmpty()
+                            }
+                        }
+                    ) { Text(if (loadingModels) "Loading…" else "Load available models") }
                 }
             },
             confirmButton = {
                 TextButton(onClick = {
                     apiKey = draftKey.trim()
-                    saveKey(apiKey)
-                    status = if (apiKey.isBlank()) "Gemini API key সেট করো" else "Ready"
+                    model = draftModel.trim().ifBlank { "deepseek-v3.2" }
+                    saveSettings(apiKey, model)
+                    status = if (apiKey.isBlank()) "FreeModel API key সেট করো" else "FreeModel • $model"
                     showSettings = false
                 }) { Text("Save") }
             },
@@ -140,22 +188,52 @@ private fun YesminApp(initialKey: String, saveKey: (String) -> Unit) {
     }
 }
 
-private suspend fun askGemini(apiKey: String, prompt: String): String = withContext(Dispatchers.IO) {
+private suspend fun fetchFreeModelModels(apiKey: String): Pair<List<String>, String> = withContext(Dispatchers.IO) {
     try {
-        val client = OkHttpClient()
-        val contents = JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt))))
-        val body = JSONObject().put("contents", contents).toString().toRequestBody("application/json; charset=utf-8".toMediaType())
         val request = Request.Builder()
-            .url("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + apiKey)
-            .post(body)
+            .url("$FREEMODEL_BASE_URL/models")
+            .header("Authorization", "Bearer $apiKey")
+            .get()
             .build()
-        client.newCall(request).execute().use { response ->
+        http.newCall(request).execute().use { response ->
             val raw = response.body?.string().orEmpty()
-            if (!response.isSuccessful) return@withContext "সমস্যা: Gemini API " + response.code + "। API key এবং quota পরীক্ষা করো।"
-            val json = JSONObject(raw)
-            json.getJSONArray("candidates").getJSONObject(0).getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text")
+            if (!response.isSuccessful) return@withContext Pair(emptyList(), "Model list error: HTTP ${response.code}")
+            val data = JSONObject(raw).optJSONArray("data") ?: JSONArray()
+            val ids = (0 until data.length()).mapNotNull { data.optJSONObject(it)?.optString("id")?.takeIf(String::isNotBlank) }
+            Pair(ids, if (ids.isEmpty()) "কোনো model পাওয়া যায়নি" else "Models loaded")
         }
     } catch (e: Exception) {
-        "সমস্যা: ইন্টারনেট বা Gemini সংযোগে সমস্যা হয়েছে। আবার চেষ্টা করো।"
+        Pair(emptyList(), "Model list load failed")
+    }
+}
+
+private suspend fun askFreeModel(apiKey: String, model: String, prompt: String): String = withContext(Dispatchers.IO) {
+    try {
+        val messages = JSONArray()
+            .put(JSONObject().put("role", "system").put("content", "You are Yesmin, a warm, caring, friendly AI assistant. You are an AI, not a human. Reply in the user's language, especially Bangla when appropriate."))
+            .put(JSONObject().put("role", "user").put("content", prompt))
+        val body = JSONObject()
+            .put("model", model)
+            .put("messages", messages)
+            .toString()
+            .toRequestBody("application/json; charset=utf-8".toMediaType())
+        val request = Request.Builder()
+            .url("$FREEMODEL_BASE_URL/chat/completions")
+            .header("Authorization", "Bearer $apiKey")
+            .header("Content-Type", "application/json")
+            .post(body)
+            .build()
+        http.newCall(request).execute().use { response ->
+            val raw = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                val detail = try { JSONObject(raw).optJSONObject("error")?.optString("message") } catch (_: Exception) { null }
+                return@withContext "সমস্যা: FreeModel API HTTP ${response.code}. ${detail ?: "API key, model বা usage limit পরীক্ষা করো।"}"
+            }
+            val choices = JSONObject(raw).optJSONArray("choices") ?: JSONArray()
+            choices.optJSONObject(0)?.optJSONObject("message")?.optString("content")
+                ?.takeIf(String::isNotBlank) ?: "সমস্যা: API থেকে খালি উত্তর এসেছে।"
+        }
+    } catch (e: Exception) {
+        "সমস্যা: ইন্টারনেট বা FreeModel সংযোগে সমস্যা হয়েছে। আবার চেষ্টা করো।"
     }
 }
