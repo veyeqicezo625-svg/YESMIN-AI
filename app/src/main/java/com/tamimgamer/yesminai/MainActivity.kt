@@ -157,9 +157,21 @@ private fun YesminApp(initialKey: String, initialModel: String, saveSettings: (S
 
     fun sendMessage() {
         val prompt = input.trim()
-        if (prompt.isNotEmpty() && !busy && apiKey.isNotBlank()) {
+        if (prompt.isNotEmpty() && !busy) {
             messages.add(ChatMessage(prompt, true))
             input = ""
+            val deviceReply = handleSafeAppCommand(context, prompt)
+            if (deviceReply != null) {
+                messages.add(ChatMessage(deviceReply, false))
+                status = "Device command"
+                speak(deviceReply)
+                return
+            }
+            if (apiKey.isBlank()) {
+                messages.add(ChatMessage("আগে Settings থেকে FreeModel API key সেট করো।", false))
+                status = "API key required"
+                return
+            }
             busy = true
             status = "Thinking • $model"
             scope.launch {
@@ -265,6 +277,36 @@ private fun YesminApp(initialKey: String, initialModel: String, saveSettings: (S
             dismissButton = { TextButton(onClick = { showSettings = false }) { Text("Cancel") } },
             containerColor = Panel, titleContentColor = White, textContentColor = White
         )
+    }
+}
+
+private fun handleSafeAppCommand(context: android.content.Context, raw: String): String? {
+    val command = raw.trim().lowercase(Locale.ROOT)
+    val apps = listOf(
+        Triple("youtube", "com.google.android.youtube", "YouTube"),
+        Triple("ইউটিউব", "com.google.android.youtube", "YouTube"),
+        Triple("chrome", "com.android.chrome", "Chrome"),
+        Triple("ক্রোম", "com.android.chrome", "Chrome"),
+        Triple("roblox", "com.roblox.client", "Roblox"),
+        Triple("whatsapp", "com.whatsapp", "WhatsApp"),
+        Triple("হোয়াটসঅ্যাপ", "com.whatsapp", "WhatsApp"),
+        Triple("facebook", "com.facebook.katana", "Facebook"),
+        Triple("ফেসবুক", "com.facebook.katana", "Facebook"),
+        Triple("settings", "com.android.settings", "Settings"),
+        Triple("সেটিংস", "com.android.settings", "Settings")
+    )
+    val match = apps.firstOrNull { (word, _, _) ->
+        command == "open $word" || command == "open the $word" ||
+            command == "ওপেন $word" || command == "খোলো $word" ||
+            command == "চালু করো $word" || command == "$word খোলো"
+    } ?: return null
+    val launch = context.packageManager.getLaunchIntentForPackage(match.second)
+    return if (launch != null) {
+        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(launch)
+        "${match.third} খুলছি।"
+    } else {
+        "${match.third} অ্যাপটি এই ফোনে ইনস্টল করা নেই।"
     }
 }
 
