@@ -1,6 +1,7 @@
 package com.tamimgamer.yesminai
 
 import android.content.Intent
+import android.provider.Settings
 import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -84,6 +85,7 @@ private fun YesminApp(initialKey: String, initialModel: String, saveSettings: (S
     var listening by remember { mutableStateOf(false) }
     var loadingModels by remember { mutableStateOf(false) }
     var modelMenu by remember { mutableStateOf(false) }
+    var pendingControl by remember { mutableStateOf<String?>(null) }
     var availableModels by remember { mutableStateOf(listOf<String>()) }
     var status by remember { mutableStateOf(if (initialKey.isBlank()) "FreeModel API key সেট করো" else "FreeModel • $initialModel") }
     val messages = remember {
@@ -160,6 +162,17 @@ private fun YesminApp(initialKey: String, initialModel: String, saveSettings: (S
         if (prompt.isNotEmpty() && !busy) {
             messages.add(ChatMessage(prompt, true))
             input = ""
+            val control = parseScreenControlCommand(prompt)
+            if (control != null) {
+                if (!YesminAccessibilityService.isEnabled(context)) {
+                    messages.add(ChatMessage("স্ক্রিন নিয়ন্ত্রণের জন্য Accessibility permission চালু করতে হবে। নিচের Enable button চাপো।", false))
+                    status = "Screen control permission required"
+                } else {
+                    pendingControl = control
+                    status = "তোমার অনুমতির অপেক্ষায়"
+                }
+                return
+            }
             val deviceReply = handleSafeAppCommand(context, prompt)
             if (deviceReply != null) {
                 messages.add(ChatMessage(deviceReply, false))
@@ -231,7 +244,29 @@ private fun YesminApp(initialKey: String, initialModel: String, saveSettings: (S
                 Icon(Icons.Default.Send, contentDescription = "Send")
             }
         }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+            TextButton(onClick = { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }) {
+                Text(if (YesminAccessibilityService.isEnabled(context)) "Screen control enabled" else "Enable screen control")
+            }
+        }
         if (apiKey.isBlank()) TextButton(onClick = { showSettings = true }) { Text("FreeModel API key সেটিংস খুলুন") }
+    }
+
+    if (pendingControl != null) {
+        AlertDialog(
+            onDismissRequest = { pendingControl = null },
+            title = { Text("YESMIN-এর অনুমতি প্রয়োজন") },
+            text = { Text("আমি এই কাজটি করতে যাচ্ছি:\\n\\n${pendingControl}\\n\\nতুমি Allow চাপলে তবেই কাজটি হবে।") },
+            confirmButton = { TextButton(onClick = {
+                val result = YesminAccessibilityService.executeApproved(pendingControl.orEmpty())
+                messages.add(ChatMessage(result, false))
+                speak(result)
+                status = "Screen action completed"
+                pendingControl = null
+            }) { Text("Allow") } },
+            dismissButton = { TextButton(onClick = { pendingControl = null; status = "Action cancelled" }) { Text("Cancel") } },
+            containerColor = Panel, titleContentColor = White, textContentColor = White
+        )
     }
 
     if (showSettings) {
@@ -277,6 +312,21 @@ private fun YesminApp(initialKey: String, initialModel: String, saveSettings: (S
             dismissButton = { TextButton(onClick = { showSettings = false }) { Text("Cancel") } },
             containerColor = Panel, titleContentColor = White, textContentColor = White
         )
+    }
+}
+
+
+private fun parseScreenControlCommand(raw: String): String? {
+    val value = raw.trim()
+    val lower = value.lowercase(Locale.ROOT)
+    return when {
+        lower.startsWith("tap ") || lower.startsWith("click ") || lower.startsWith("চাপো ") || lower.startsWith("ট্যাপ ") ->
+            "tap:" + value.substringAfter(' ').trim().takeIf { it.isNotBlank() }.orEmpty()
+        lower == "scroll down" || lower == "নিচে স্ক্রল করো" -> "scroll:down"
+        lower == "scroll up" || lower == "উপরে স্ক্রল করো" -> "scroll:up"
+        lower == "press back" || lower == "go back" || lower == "পেছনে যাও" -> "back"
+        lower == "read screen" || lower == "স্ক্রিনে কী আছে বলো" -> "read"
+        else -> null
     }
 }
 
