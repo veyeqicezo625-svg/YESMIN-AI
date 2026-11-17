@@ -89,6 +89,7 @@ private fun YesminApp(initialKey: String, initialModel: String, initialVoiceGend
     var draftKey by remember { mutableStateOf(initialKey) }
     var draftModel by remember { mutableStateOf(initialModel) }
     var input by remember { mutableStateOf("") }
+    var voiceSubmission by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var listening by remember { mutableStateOf(false) }
     var loadingModels by remember { mutableStateOf(false) }
@@ -97,7 +98,7 @@ private fun YesminApp(initialKey: String, initialModel: String, initialVoiceGend
     var availableModels by remember { mutableStateOf(listOf<String>()) }
     var status by remember { mutableStateOf(if (initialKey.isBlank()) "FreeModel API key সেট করো" else "FreeModel • $initialModel") }
     val messages = remember {
-        mutableStateListOf(ChatMessage("হ্যালো! আমি Yesmin AI। 💜\nমাইক্রোফোনে কথা বলো অথবা লিখে পাঠাও।", false))
+        mutableStateListOf(ChatMessage("হ্যালো! আমি Yesmin AI। 💜\nমাইক্রোফোন চাপো এবং কথা বলো।", false))
     }
     val scope = rememberCoroutineScope()
 
@@ -128,7 +129,7 @@ private fun YesminApp(initialKey: String, initialModel: String, initialVoiceGend
                 override fun onResults(results: Bundle?) {
                     listening = false
                     val spoken = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
-                    if (!spoken.isNullOrBlank()) input = spoken
+                    if (!spoken.isNullOrBlank()) voiceSubmission = spoken
                     status = "Voice ready"
                 }
                 override fun onPartialResults(partialResults: Bundle?) {
@@ -219,6 +220,13 @@ private fun YesminApp(initialKey: String, initialModel: String, initialVoiceGend
         }
     }
 
+    LaunchedEffect(voiceSubmission) {
+        val spoken = voiceSubmission ?: return@LaunchedEffect
+        voiceSubmission = null
+        input = spoken
+        sendMessage()
+    }
+
     Column(Modifier.fillMaxSize().background(Night).padding(14.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             Column {
@@ -250,11 +258,8 @@ private fun YesminApp(initialKey: String, initialModel: String, initialVoiceGend
             if (busy) item { Text("Yesmin লিখছে…", color = Blue) }
         }
         Spacer(Modifier.height(10.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(value = input, onValueChange = { input = it }, modifier = Modifier.weight(1f), placeholder = { Text("লিখো বা মাইক্রোফোন চাপো…") }, shape = RoundedCornerShape(24.dp), maxLines = 4)
-            Spacer(Modifier.width(4.dp))
-            IconButton(
-                enabled = !busy,
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+            FilledIconButton(
                 onClick = {
                     if (listening) {
                         recognizer?.stopListening()
@@ -264,11 +269,14 @@ private fun YesminApp(initialKey: String, initialModel: String, initialVoiceGend
                     } else {
                         micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
                     }
-                }
-            ) { Icon(Icons.Default.Mic, contentDescription = "Voice input", tint = if (listening) Blue else White) }
-            FilledIconButton(onClick = { sendMessage() }, enabled = input.isNotBlank() && !busy) {
-                Icon(Icons.Default.Send, contentDescription = "Send")
+                },
+                enabled = !busy,
+                modifier = Modifier.size(76.dp)
+            ) {
+                Icon(Icons.Default.Mic, contentDescription = "Speak to YESMIN", modifier = Modifier.size(34.dp), tint = if (listening) Blue else White)
             }
+            Spacer(Modifier.height(6.dp))
+            Text(if (listening) "YESMIN শুনছে… কথা শেষ হলে নিজে থেকেই পাঠাবে" else "কথা বলতে মাইক্রোফোন চাপো", color = Blue, style = MaterialTheme.typography.bodySmall)
         }
         Button(
             onClick = {
