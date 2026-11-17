@@ -393,33 +393,41 @@ private fun parseScreenControlCommand(raw: String): String? {
     }
 }
 
-private fun handleSafeAppCommand(context: android.content.Context, raw: String): String? {
+internal fun findInstalledApp(context: android.content.Context, raw: String): Pair<String, String>? {
     val command = raw.trim().lowercase(Locale.ROOT)
-    val apps = listOf(
-        Triple("youtube", "com.google.android.youtube", "YouTube"),
-        Triple("ইউটিউব", "com.google.android.youtube", "YouTube"),
-        Triple("chrome", "com.android.chrome", "Chrome"),
-        Triple("ক্রোম", "com.android.chrome", "Chrome"),
-        Triple("roblox", "com.roblox.client", "Roblox"),
-        Triple("whatsapp", "com.whatsapp", "WhatsApp"),
-        Triple("হোয়াটসঅ্যাপ", "com.whatsapp", "WhatsApp"),
-        Triple("facebook", "com.facebook.katana", "Facebook"),
-        Triple("ফেসবুক", "com.facebook.katana", "Facebook"),
-        Triple("settings", "com.android.settings", "Settings"),
-        Triple("সেটিংস", "com.android.settings", "Settings")
-    )
-    val match = apps.firstOrNull { (word, _, _) ->
-        command == "open $word" || command == "open the $word" ||
-            command == "ওপেন $word" || command == "খোলো $word" ||
-            command == "চালু করো $word" || command == "$word খোলো"
+    val verbs = listOf("open the", "open", "launch", "খুলে দাও", "চালু করো", "খোলো", "ওপেন", "খুলুন", "চালু", "যাও", "khol", "open")
+    if (verbs.none { command.contains(it) }) return null
+    var target = command
+    verbs.sortedByDescending { it.length }.forEach { target = target.replace(it, " ") }
+    listOf("আমার ফোনে", "ফোনে", "অ্যাপ", "app", "please", "দয়া করে").forEach { target = target.replace(it, " ") }
+    target = target.replace(Regex("[^\\p{L}\\p{N} ]"), " ").replace(Regex("\\s+"), " ").trim()
+    if (target.isBlank()) return null
+
+    val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+    val activities = context.packageManager.queryIntentActivities(launcher, 0)
+    val match = activities.firstOrNull { info ->
+        val label = info.loadLabel(context.packageManager).toString().lowercase(Locale.ROOT)
+            .replace(Regex("[^\\p{L}\\p{N} ]"), " ").replace(Regex("\\s+"), " ").trim()
+        label.isNotBlank() && (target == label || target.endsWith(" $label") || (target.length >= 3 && label == target.substringAfterLast(" ")))
     } ?: return null
-    val launch = context.packageManager.getLaunchIntentForPackage(match.second)
+    val packageName = match.activityInfo.packageName
+    val label = match.loadLabel(context.packageManager).toString()
+    return packageName to label
+}
+
+private fun handleSafeAppCommand(context: android.content.Context, raw: String): String? {
+    val target = findInstalledApp(context, raw)
+    val command = raw.lowercase(Locale.ROOT)
+    val hasOpenVerb = listOf("open", "launch", "খোলো", "খুলে দাও", "ওপেন", "চালু", "যাও", "khol").any { command.contains(it) }
+    if (!hasOpenVerb) return null
+    if (target == null) return "এই নামে কোনো ইনস্টল করা অ্যাপ খুঁজে পেলাম না। অ্যাপের নাম বলে আবার চেষ্টা করো।"
+    val launch = context.packageManager.getLaunchIntentForPackage(target.first)
     return if (launch != null) {
         launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         context.startActivity(launch)
-        "${match.third} খুলছি।"
+        "${target.second} খুলছি।"
     } else {
-        "${match.third} অ্যাপটি এই ফোনে ইনস্টল করা নেই।"
+        "${target.second} সরাসরি খোলা যাচ্ছে না।"
     }
 }
 
