@@ -68,7 +68,8 @@ class YesminVoiceService : Service() {
         tts = TextToSpeech(this) { result ->
             if (result == TextToSpeech.SUCCESS) {
                 tts?.language = Locale("bn", "BD")
-                val male = tts?.voices?.firstOrNull { v -> v.locale.language == "bn" && listOf("male", "man", "masculine").any { m -> v.name.lowercase(Locale.ROOT).contains(m) } }
+                val alex = tts?.voices?.firstOrNull { v -> v.name.lowercase(Locale.ROOT).contains("alex") }
+                val male = alex ?: tts?.voices?.firstOrNull { v -> v.locale.language == "bn" && listOf("male", "man", "masculine").any { m -> v.name.lowercase(Locale.ROOT).contains(m) } }
                 if (male != null) tts?.voice = male else tts?.setPitch(0.86f)
                 tts?.setSpeechRate(1.0f)
                 tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
