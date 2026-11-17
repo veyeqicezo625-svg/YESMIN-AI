@@ -1,6 +1,7 @@
 package com.tamimgamer.yesminai
 
 import android.content.Intent
+import android.net.Uri
 import android.provider.Settings
 import android.os.Bundle
 import android.speech.RecognitionListener
@@ -156,6 +157,13 @@ private fun YesminApp(initialKey: String, initialModel: String, initialVoiceGend
     val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) startListening() else status = "Voice ব্যবহারে Microphone permission দরকার"
     }
+    val assistantMicPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            val serviceIntent = Intent(context, YesminVoiceService::class.java).setAction(YesminVoiceService.ACTION_START)
+            if (android.os.Build.VERSION.SDK_INT >= 26) context.startForegroundService(serviceIntent) else context.startService(serviceIntent)
+            status = "YESMIN Floating Assistant চালু হয়েছে"
+        } else status = "Floating Assistant চালাতে Microphone permission দরকার"
+    }
 
     fun speak(text: String) {
         if (text.isNotBlank()) {
@@ -262,6 +270,20 @@ private fun YesminApp(initialKey: String, initialModel: String, initialVoiceGend
                 Icon(Icons.Default.Send, contentDescription = "Send")
             }
         }
+        Button(
+            onClick = {
+                if (!Settings.canDrawOverlays(context)) {
+                    context.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}")))
+                } else if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                    val serviceIntent = Intent(context, YesminVoiceService::class.java).setAction(YesminVoiceService.ACTION_START)
+                    if (android.os.Build.VERSION.SDK_INT >= 26) context.startForegroundService(serviceIntent) else context.startService(serviceIntent)
+                    status = "YESMIN Floating Assistant চালু হয়েছে"
+                } else {
+                    assistantMicPermission.launch(android.Manifest.permission.RECORD_AUDIO)
+                }
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("Start Floating Voice Assistant") }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
             TextButton(onClick = { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }) {
                 Text(if (YesminAccessibilityService.isEnabled(context)) "Screen control enabled" else "Enable screen control")
